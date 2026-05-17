@@ -1,0 +1,36 @@
+{
+  "name": "compress",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc && vite build",
+    "start": "node dist/src/server/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "archiver": "latest",
+    "clsx": "latest",
+    "express": "latest",
+    "file-type": "latest",
+    "lucide-react": "latest",
+    "multer": "latest",
+    "p-limit": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "sharp": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/archiver": "latest",
+    "@types/express": "latest",
+    "@types/multer": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

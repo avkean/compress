@@ -1,0 +1,25 @@
+.git
+.gitignore
+.github
+
+node_modules
+dist
+
+# Local artefacts
+benchmark-results
+corpus
+*.log
+.DS_Store
+
+# Local-only configs
+.env
+.env.local
+.vscode
+.idea
+
+# Docs not needed in the build context (Dockerfile + compose still get picked up)
+docs
+README.md
+handoff.md
+plan.md
+plan_changelog.md

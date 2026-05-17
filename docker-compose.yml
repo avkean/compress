@@ -1,0 +1,15 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: compress
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - proxy_net
+
+networks:
+  proxy_net:
+    external: true
