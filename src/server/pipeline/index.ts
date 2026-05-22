@@ -131,29 +131,30 @@ interface EncodingSummary {
   reason: string;
 }
 
+// Empirical bytes-per-pixel target for our q75 4:2:0 mozjpeg output on real
+// photo content. If the input JPEG is already at or below this density it
+// almost never benefits from a re-encode — we'd burn ~400ms to discover the
+// material-savings gate already keeps the original.
+const JPEG_TARGET_BPP = 0.11;
+
 async function decideAndEncode(
   input: UploadedFileLike,
   decodeBuffer: Buffer,
   detectedExt: string,
   profile: CompressionProfile,
-  options: CompressionOptions
+  options: CompressionOptions,
+  metadata: sharp.Metadata
 ): Promise<EncodingSummary & {
   metadata: sharp.Metadata;
   classification: { imageClass: string; uiTextLikely: boolean; warnings: string[] };
 }> {
-  const metadata = await sharp(decodeBuffer, {
-    animated: false,
-    limitInputPixels: UPLOAD_LIMITS.maxPixelsPerImage
-  }).metadata();
-
   const ext = detectedExt.toLowerCase();
   const mime = input.mimetype.toLowerCase();
   const hasAlpha = Boolean(metadata.hasAlpha) || metadata.channels === 4;
 
   // Photographic inputs (JPEG/HEIC without alpha) skip the thumbnail
-  // classification entirely. That saves ~30ms per image and — much more
-  // importantly — prevents real camera photos from being mis-classified as
-  // UI-text and re-encoded at q85 4:4:4.
+  // classification entirely. Saves ~30ms and prevents real camera photos
+  // being misrouted to text-safe high-quality 4:4:4.
   const photographic = inputIsPhotographic({ ext, mime, hasAlpha });
   let imageClass: string = photographic ? "photo" : hasAlpha ? "alpha" : "unknown";
   let uiTextLikely = false;
@@ -178,14 +179,30 @@ async function decideAndEncode(
     profile,
     { outputHeic: options.outputHeic === true }
   );
-  const output = await executeEncoding(decodeBuffer, decision);
 
-  // Keep the original when it's already smaller than our encode and the source
-  // format is a safe fit for the chosen profile. JPEG sources frequently
-  // out-compress a re-encode because they were saved at higher quality.
   const sourceExt = sanitizeExtension(input.originalname).toLowerCase();
   const sourceIsAlreadyTargetFormat = sourceExt.replace(".", "") === decision.format;
   const sourceWasJpeg = (sourceExt === ".jpg" || sourceExt === ".jpeg") && decision.format === "jpg";
+
+  // Short-circuit: when a JPEG is already encoded at or below the target
+  // bytes-per-pixel we'd produce, the encode is guaranteed not to win the
+  // 3% material-savings gate and just burns ~400ms. Return the original
+  // before paying that cost.
+  const pixels = (metadata.width ?? 0) * (metadata.height ?? 0);
+  if (sourceWasJpeg && pixels > 0 && input.buffer.length / pixels <= JPEG_TARGET_BPP) {
+    return {
+      metadata,
+      classification: { imageClass, uiTextLikely, warnings: classificationWarnings },
+      selected: { name: "original-jpeg", extension: sourceExt, format: decision.format, data: input.buffer },
+      decision,
+      keptOriginal: true,
+      reason: "input_already_below_target_bpp"
+    };
+  }
+
+  const output = await executeEncoding(decodeBuffer, decision, metadata);
+
+  // Keep the original when the re-encode didn't actually win.
   const canKeepInsteadOfEncoding =
     (sourceIsAlreadyTargetFormat || sourceWasJpeg) && input.buffer.length <= output.length;
 
@@ -285,19 +302,21 @@ async function processOne(
       decodeBuffer = input.buffer;
     }
 
-    const animationMetadata = HEIC_EXTENSIONS.has(detectedExt)
-      ? null
-      : await sharp(input.buffer, {
-          animated: true,
-          limitInputPixels: UPLOAD_LIMITS.maxPixelsPerImage
-        }).metadata();
+    // ONE metadata call per request. With `animated: true` it reports
+    // `pages` for multi-frame inputs (so we can passthrough animation) and
+    // hasAlpha / channels / orientation for the primary frame — all the
+    // downstream paths need. Saves a redundant header read.
+    const metadata = await sharp(decodeBuffer, {
+      animated: true,
+      limitInputPixels: UPLOAD_LIMITS.maxPixelsPerImage
+    }).metadata();
 
-    if (animationMetadata && isLikelyAnimated(animationMetadata, detectedExt)) {
-      return passthroughEntry(input, profile, usedNames, animationMetadata, inputFormat, detectedExt);
+    if (!HEIC_EXTENSIONS.has(detectedExt) && isLikelyAnimated(metadata, detectedExt)) {
+      return passthroughEntry(input, profile, usedNames, metadata, inputFormat, detectedExt);
     }
 
-    const result = await decideAndEncode(input, decodeBuffer, detectedExt, profile, options);
-    const { selected, decision, keptOriginal, reason, metadata, classification } = result;
+    const result = await decideAndEncode(input, decodeBuffer, detectedExt, profile, options, metadata);
+    const { selected, decision, keptOriginal, reason, classification } = result;
     const outputName = uniqueZipName(usedNames, input.originalname, selected.extension);
     const outputBytes = selected.data.length;
     const duration = Math.round(performance.now() - started);

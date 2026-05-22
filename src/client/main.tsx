@@ -142,6 +142,46 @@ function App() {
     };
   }, [addFiles]);
 
+  // Paste image data from the clipboard (Cmd/Ctrl-V) — screenshots, copied
+  // images from another tab, etc. Pasted screenshots usually arrive as
+  // `image/png` with a blank or generic name, so we give them a unique
+  // timestamped name to keep dedup + downloads sensible.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      // Ignore paste targeted at editable fields (we don't have any today,
+      // but this guard keeps things safe if a text input is added later).
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA)$/.test(target.tagName))) return;
+
+      const items = event.clipboardData?.items;
+      if (!items || items.length === 0) return;
+
+      const pasted: File[] = [];
+      for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+        if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        const looksGeneric = !file.name || file.name === "image.png" || file.name === "image.jpeg";
+        if (looksGeneric) {
+          const ext = (item.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
+          pasted.push(new File([file], `pasted-${Date.now()}-${i}.${ext}`, { type: file.type }));
+        } else {
+          pasted.push(file);
+        }
+      }
+
+      if (pasted.length === 0) return;
+      event.preventDefault();
+      const dt = new DataTransfer();
+      for (const file of pasted) dt.items.add(file);
+      addFiles(dt.files);
+    };
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [addFiles]);
+
   function removeFile(index: number): void {
     setFiles((current) => current.filter((_, i) => i !== index));
   }

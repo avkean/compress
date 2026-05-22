@@ -11,6 +11,9 @@ import { securityHeaders } from "./http/security.js";
 import { installShutdownHandlers } from "./http/shutdown.js";
 import { upload } from "./http/upload.js";
 import { resolveBuildVersion } from "./http/version.js";
+import { initSharp } from "./pipeline/sharp-init.js";
+
+initSharp();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
