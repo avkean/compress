@@ -1,0 +1,18 @@
+services:
+  compress:
+    build: .
+    container_name: compress
+    restart: unless-stopped
+    init: true
+    networks:
+      - proxy_net
+    read_only: true
+    # For decoding HEIC
+    tmpfs: [/tmp:size=1g]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+
+networks:
+  proxy_net:
+    external: true
